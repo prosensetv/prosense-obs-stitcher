@@ -1,0 +1,118 @@
+/*
+Copyright (C) 2017 by Artyom Sabadyr <zvenayte@gmail.com>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+
+uniform texture2d target;
+//uniform float2 resO;
+uniform float2 resI;
+uniform float3 yrp;
+uniform float ppr;
+uniform float3 abc;
+uniform float2 de;
+uniform float2 crop_r;
+uniform float2 crop_c;
+
+sampler_state textureSampler {
+	Filter    = Linear;
+	AddressU  = Border;
+	AddressV  = Border;
+	BorderColor = 00000000;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+float2 get_coords(float2 coords)
+{
+	float lon = -coords.x;
+	float lat = coords.y;
+	float3 P;
+	
+	float c_lon;
+	float s_lon;
+	sincos(lon, s_lon, c_lon);
+	float c_lat;
+	float s_lat;
+	sincos(lat, s_lat, c_lat);
+	
+	P.x = c_lat * s_lon;
+	P.y = c_lat * c_lon;
+	P.z = s_lat;
+	
+	float2 r;
+	r.y = atan2(P.z, P.x);
+	r.x = atan2(sqrt(P.x * P.x + P.z * P.z), P.y);
+	return r;
+}
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+float4 render(VertData v_in) : TARGET
+{
+	float4 val = 0;
+	float c_y, s_y;
+	sincos(-yrp.y, s_y, c_y);
+	
+	float2 fcoords = v_in.uv;
+	fcoords.x = 2.0f * 3.14159265f * (fcoords.x - 0.5f);
+	fcoords.y = 3.14159265f * -(fcoords.y - 0.5f);
+	fcoords.x -= yrp.x;
+	
+	float alpha = target.Sample(textureSampler, v_in.uv).w;
+
+	if(alpha > 0.004f)
+	{
+		float2 r = get_coords(fcoords);
+		float2 fcoords2;
+		fcoords2.x = r.x * cos(r.y);
+		fcoords2.y = r.x * sin(r.y) - yrp.z;
+		r.x = fcoords2.x * c_y - fcoords2.y * s_y;
+		r.y = fcoords2.x * s_y + fcoords2.y * c_y;
+		fcoords2 = r * ppr;
+		r = fcoords2 / resI.y * 2.0f;
+		r *= r;
+		r.x = sqrt(r.x + r.y);
+		float undis = ((abc.x * r.x + abc.y) * r.x + abc.z) * r.x + (1.0f - (abc.x + abc.y + abc.z));
+		fcoords2 *= undis;
+
+		fcoords2 = -fcoords2;
+		fcoords2 += (resI / 2.0f) + de;
+		
+		val = image.Sample(textureSampler, fcoords2 / resI);
+		val.w = alpha;
+	}
+	return val;
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = render(v_in);
+	}
+}
