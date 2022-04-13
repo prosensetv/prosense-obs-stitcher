@@ -29,6 +29,7 @@ struct obs_source_info stitch_filter;
 bool obs_module_load(void)
 {
 	obs_register_source(&stitch_filter);
+	return true;
 }
 
 static void stitch_filter_update(void *data, obs_data_t *settings);
